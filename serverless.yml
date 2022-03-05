@@ -1,0 +1,80 @@
+service:
+  name: "osf-serverless-certificate"
+
+plugins:
+  - serverless-offline # plugin needed to run serverless locally
+  - serverless-webpack
+  - serverless-dynamodb-local # plugin needed to run dynamodb locally
+
+custom:
+  webpack:
+    webpackConfig: ./webpack.config.js
+    includeModules: true
+  dynamodb:
+      stages:
+          - dev
+          - local
+      start:
+          port: 8000
+          inMemory: true # Creates DynamoDB in memory instance for local development
+          migrate: true # Creates table if they were not created yet
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  region: us-east-1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+          - dynamodb:*
+      Resource: "*"
+    - Effect: Allow
+      Action:
+          - s3:*
+      Resource: "*"
+
+functions:
+  generateCertificate:
+    handler: src/functions/generateCertificate.handle
+    events:
+      - http:
+          path: /generateCertificate
+          method: POST
+          cors: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+          - dynamodb:PutItem
+        Resource: "arn:aws:dynamodb:${self.provider.region}:*:table/users_certificates"
+  verifyCertificate:
+    handler: src/functions/verifyCertificate.handle
+    events:
+      - http:
+          path: /verifyCertificate/{id}
+          method: GET
+          cors: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource: "arn:aws:dynamodb:${self.provider.region}:*:table/users_certificates"
+resources:
+  Resources:
+    dbCertificateUsers:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: users_certificates
+
+        # How many operations per second it supports
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5 
+          WriteCapacityUnits: 5
+        
+        # On DynamoDB we just declare the "column" that will be the ID/KEY
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
